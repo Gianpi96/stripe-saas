@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     SLACK_WEBHOOK_URL: str = ""
     ALERT_EMAIL: str = ""
 
-    class Config:
-        env_file = ".env"
+    model_config = {"env_file": ".env"}
 
 
 settings = Settings()
