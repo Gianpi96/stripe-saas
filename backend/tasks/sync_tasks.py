@@ -107,6 +107,16 @@ def process_webhook_event(self, event_id: str, event_type: str, data_json: str):
     db = SessionLocal()
     try:
         data = json.loads(data_json)
+        # Guard: in some Stripe SDK versions the StripeObject is serialised via
+        # __str__ (its repr) instead of as a dict, producing a double-encoded
+        # JSON string.  Parse once more to recover the actual dict.
+        if isinstance(data, str):
+            logger.warning(
+                "data_json_double_encoded",
+                extra={"event_id": event_id, "preview": data[:120]},
+            )
+            data = json.loads(data)
+
         record = db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).first()
 
         if event_type == "checkout.session.completed":
