@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Pagamento confermato</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#059669,#10b981);padding:40px;text-align:center;">
+              <div style="font-size:48px;margin-bottom:12px;">✅</div>
+              <h1 style="margin:0;font-size:24px;color:#ffffff;font-weight:700;">Pagamento confermato</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <p style="margin:0 0 24px;color:#374151;font-size:16px;line-height:1.6;">
+                Grazie! Il tuo pagamento è stato ricevuto con successo.
+              </p>
+              <!-- Receipt box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border-radius:8px;padding:24px;border:1px solid #e5e7eb;">
+                <tr>
+                  <td>
+                    <p style="margin:0 0 12px;color:#6b7280;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;">Riepilogo pagamento</p>
+                    <table width="100%">
+                      <tr>
+                        <td style="color:#374151;padding:6px 0;">Importo addebitato</td>
+                        <td align="right" style="color:#111827;font-weight:700;font-size:18px;">€${amount}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#374151;padding:6px 0;font-size:13px;">ID Fattura</td>
+                        <td align="right" style="color:#6b7280;font-size:13px;">${invoice_id}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 32px;color:#374151;line-height:1.6;">
+                Puoi scaricare la ricevuta completa dal link qui sotto:
+              </p>
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="border-radius:8px;background:#7c3aed;">
+                    <a href="${invoice_url}"
+                       style="display:inline-block;padding:12px 24px;color:#ffffff;font-weight:600;text-decoration:none;">
+                      Scarica ricevuta
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:0 40px 32px;">
+              ${unsubscribe_footer}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

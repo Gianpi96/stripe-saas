@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Il tuo trial scade tra 3 giorni</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#d97706,#f59e0b);padding:40px;text-align:center;">
+              <div style="font-size:48px;margin-bottom:12px;">⏳</div>
+              <h1 style="margin:0;font-size:24px;color:#ffffff;font-weight:700;">
+                Il tuo trial ${plan} scade tra 3 giorni
+              </h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <p style="margin:0 0 20px;color:#374151;font-size:16px;line-height:1.6;">
+                Stai usando il piano <strong>${plan}</strong> in modalità trial. Il tuo periodo
+                gratuito terminerà il <strong>${trial_end}</strong>.
+              </p>
+              <p style="margin:0 0 32px;color:#374151;line-height:1.6;">
+                Dopo la scadenza, perderai l'accesso alle feature Pro a meno che tu non inserisca
+                un metodo di pagamento. Puoi aggiornarlo ora — non ti addebiteremo nulla fino alla
+                fine del trial.
+              </p>
+              <!-- CTA -->
+              <table cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="border-radius:8px;background:#7c3aed;">
+                    <a href="${app_url}/dashboard/billing"
+                       style="display:inline-block;padding:14px 28px;color:#ffffff;font-weight:700;font-size:16px;text-decoration:none;">
+                      Attiva la tua subscription →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <!-- Reminder of features -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#fef3c7;border-radius:8px;padding:20px;border-left:4px solid #f59e0b;">
+                    <p style="margin:0;color:#92400e;line-height:1.6;">
+                      <strong>Cosa perderai:</strong> accesso alle API avanzate, dashboard analytics,
+                      supporto prioritario e integrazioni Pro.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:0 40px 32px;">
+              ${unsubscribe_footer}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

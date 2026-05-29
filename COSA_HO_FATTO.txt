@@ -1,0 +1,97 @@
+==============================================================
+  STRIPE-SAAS — Cosa ho costruito, in parole semplici
+==============================================================
+
+Ho creato un'applicazione web completa che permette agli utenti
+di abbonarsi a un servizio SaaS e pagare tramite Stripe.
+
+--------------------------------------------------------------
+  COSA VEDE L'UTENTE
+--------------------------------------------------------------
+
+1. Va su /pricing e vede due piani:
+   - Basic a $9 al mese
+   - Pro a $29 al mese
+
+2. Clicca "Passa a Pro" e viene portato sulla pagina di
+   pagamento di Stripe (sicura, gestita da Stripe, non da noi).
+
+3. Ha 14 giorni gratis prima che parta il primo addebito.
+
+4. Dopo il pagamento torna su /success e riceve una email
+   di benvenuto.
+
+5. Dal suo profilo (/dashboard/billing) può:
+   - Vedere lo stato del suo abbonamento
+   - Aprire il portale Stripe per cambiare piano,
+     aggiornare la carta o cancellare l'abbonamento.
+
+--------------------------------------------------------------
+  COSA SUCCEDE DIETRO LE QUINTE
+--------------------------------------------------------------
+
+BACKEND (FastAPI — il "cervello" del sito):
+- Crea la sessione di pagamento su Stripe
+- Salva nel database chi ha pagato e che piano ha
+- Controlla se un utente ha un abbonamento attivo
+  prima di dargli accesso alle funzioni Pro
+- Risponde a Stripe in meno di 5 secondi per ogni evento
+
+STRIPE WEBHOOK (il "postino" di Stripe):
+- Stripe ci invia una notifica ogni volta che succede
+  qualcosa (pagamento riuscito, abbonamento cancellato, ecc.)
+- Noi verifichiamo che il messaggio sia autentico (firma HMAC)
+- Se un messaggio arriva due volte, lo ignoriamo (idempotency)
+- Il lavoro pesante viene fatto in background (Celery)
+  senza far aspettare Stripe
+
+EMAIL (Resend):
+- Email di benvenuto quando l'utente si registra
+- Email di conferma quando un pagamento va a buon fine
+- Email di avviso 3 giorni prima che scada il trial
+- Email di allerta se un pagamento fallisce
+
+CRON GIORNALIERO (Celery Beat):
+- Ogni mattina alle 3:00 sincronizza gli abbonamenti
+  con Stripe (in caso di eventi persi)
+- Alle 9:00 manda i promemoria del trial in scadenza
+
+--------------------------------------------------------------
+  SICUREZZA
+--------------------------------------------------------------
+
+- Nessun dato di carta transita dai nostri server
+  (Stripe gestisce tutto)
+- Le notifiche Stripe sono verificate con firma crittografica
+- Chi non ha un abbonamento attivo non puo' accedere
+  alle funzioni Pro (ritorna errore 403)
+- La sessione di pagamento scade dopo 30 minuti
+
+--------------------------------------------------------------
+  FILE PRINCIPALI
+--------------------------------------------------------------
+
+backend/main.py              -> punto di entrata del server
+backend/routers/payments.py  -> endpoint pagamento e portal
+backend/routers/webhooks.py  -> riceve eventi da Stripe
+backend/tasks/sync_tasks.py  -> elaborazione asincrona eventi
+backend/tasks/email_tasks.py -> invio email in background
+backend/models.py            -> struttura del database
+backend/middleware/          -> controllo abbonamento attivo
+backend/templates/*.html     -> template email HTML
+
+frontend/app/pricing/        -> pagina con i piani
+frontend/app/success/        -> pagina dopo il pagamento
+frontend/app/dashboard/      -> gestione abbonamento
+frontend/lib/api.ts          -> chiamate al backend
+
+--------------------------------------------------------------
+  STATI ABBONAMENTO
+--------------------------------------------------------------
+
+  trialing  -> prova gratuita in corso (14 giorni)
+  active    -> abbonamento attivo e pagante
+  past_due  -> pagamento fallito, accesso a rischio
+  canceled  -> abbonamento cancellato
+
+==============================================================
