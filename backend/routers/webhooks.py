@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 ACTIVE_STATUSES = {SubscriptionStatus.active, SubscriptionStatus.trialing}
 
 
+def _stripe_obj_to_dict(val):
+    """Recursively convert a Stripe SDK StripeObject to plain Python types.
+
+    Stripe SDK v15 StripeObject is a dict subclass but json.dumps may fall back
+    to default=str for it in some versions, producing a string instead of a dict.
+    This helper ensures we always get serialisable native types.
+    """
+    if hasattr(val, "items"):          # dict / StripeObject
+        return {k: _stripe_obj_to_dict(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_stripe_obj_to_dict(v) for v in val]
+    return val                         # str, int, float, bool, None — already fine
+
+
 def _to_datetime(ts: int | None) -> datetime | None:
     if ts is None:
         return None
@@ -68,11 +82,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         logger.info("webhook_already_processed", extra={"event_id": event_id})
         return {"status": "skipped"}
 
+    # Safely serialise the Stripe event data to a plain JSON string.
+    # StripeObject (Stripe SDK v15) must be recursively converted to native
+    # Python types before json.dumps — otherwise default=str turns the whole
+    # object into its repr string and the Celery task receives a str, not a dict.
+    obj_dict = _stripe_obj_to_dict(event["data"]["object"])
+    data_json = json.dumps(obj_dict, default=str)
+
     # Record the raw event before processing
     record = WebhookEvent(
         event_id=event_id,
         event_type=event_type,
-        payload=json.dumps(event.data.object, default=str),
+        payload=data_json,
         status="processing",
     )
     db.add(record)
@@ -88,7 +109,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     )
     from tasks.sync_tasks import process_webhook_event
 
-    process_webhook_event.delay(event_id, event_type, json.dumps(event.data.object, default=str))
+    process_webhook_event.delay(event_id, event_type, data_json)
 
     record.status = "queued"
     db.commit()
