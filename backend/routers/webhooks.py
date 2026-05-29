@@ -18,18 +18,26 @@ logger = logging.getLogger(__name__)
 ACTIVE_STATUSES = {SubscriptionStatus.active, SubscriptionStatus.trialing}
 
 
-def _stripe_obj_to_dict(val):
-    """Recursively convert a Stripe SDK StripeObject to plain Python types.
+def _stripe_obj_to_dict(val) -> dict:
+    """Convert a Stripe SDK StripeObject to a plain Python dict.
 
-    Stripe SDK v15 StripeObject is a dict subclass but json.dumps may fall back
-    to default=str for it in some versions, producing a string instead of a dict.
-    This helper ensures we always get serialisable native types.
+    In Stripe Python SDK v15 the StripeObject stores data in an internal
+    _data dict and dict(stripe_obj) fails with KeyError on integer keys.
+    str(stripe_obj) always returns a valid JSON representation, so we
+    parse that.  For plain dicts (e.g. test mocks) we fall back to
+    iterating .items() directly.
     """
-    if hasattr(val, "items"):          # dict / StripeObject
-        return {k: _stripe_obj_to_dict(v) for k, v in val.items()}
-    if isinstance(val, list):
-        return [_stripe_obj_to_dict(v) for v in val]
-    return val                         # str, int, float, bool, None — already fine
+    try:
+        result = json.loads(str(val))
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    # Fallback for plain dicts / StripeEventMock used in tests
+    if isinstance(val, dict):
+        return {k: _stripe_obj_to_dict(v) if isinstance(v, dict) else v
+                for k, v in val.items()}
+    return {}
 
 
 def _to_datetime(ts: int | None) -> datetime | None:

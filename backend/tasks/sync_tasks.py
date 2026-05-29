@@ -24,6 +24,23 @@ PRICE_TO_PLAN = {
 }
 
 
+def _stripe_to_dict(obj) -> dict:
+    """Convert a Stripe SDK StripeObject to a plain Python dict.
+
+    In Stripe Python SDK v15 the StripeObject stores data in an internal
+    `_data` dict.  dict(stripe_obj) fails because it uses integer keys.
+    str(stripe_obj) always returns a JSON-formatted representation, so we
+    parse that instead.
+    """
+    try:
+        return json.loads(str(obj))
+    except Exception:
+        # Fallback for plain dicts or test mocks
+        if hasattr(obj, "items"):
+            return dict(obj)
+        return {}
+
+
 def _to_dt(ts: int | None) -> datetime | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
 
@@ -157,7 +174,7 @@ def _handle_checkout_completed(db, data: dict):
     if not sub_id:
         return
     stripe_sub = stripe.Subscription.retrieve(sub_id)
-    _upsert_subscription(db, dict(stripe_sub), user_id=user_id)
+    _upsert_subscription(db, _stripe_to_dict(stripe_sub), user_id=user_id)
 
 
 def _handle_subscription_updated(db, data: dict):
@@ -210,7 +227,7 @@ def sync_all_subscriptions():
     synced = 0
     try:
         for stripe_sub in stripe.Subscription.list(limit=100, status="all").auto_paging_iter():
-            _upsert_subscription(db, dict(stripe_sub))
+            _upsert_subscription(db, _stripe_to_dict(stripe_sub))
             synced += 1
         logger.info("sync_complete", extra={"synced": synced})
     finally:
