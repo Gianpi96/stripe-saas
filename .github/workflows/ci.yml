@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ----------------------------------------------------------------
+  # Backend — FastAPI + security tests
+  # ----------------------------------------------------------------
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Create test .env
+        working-directory: backend
+        run: |
+          cat > .env << 'EOF'
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY_TEST }}
+          STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY_TEST }}
+          STRIPE_WEBHOOK_SECRET=whsec_test_placeholder
+          STRIPE_BASIC_PRICE_ID=price_test_basic
+          STRIPE_PRO_PRICE_ID=price_test_pro
+          APP_URL=http://localhost:3000
+          DATABASE_URL=sqlite:///./test.db
+          REDIS_URL=redis://localhost:6379/0
+          RESEND_API_KEY=
+          EOF
+
+      - name: Start FastAPI server
+        working-directory: backend
+        run: |
+          uvicorn main:app --port 8000 &
+          sleep 3
+
+      - name: Run security tests
+        working-directory: backend
+        run: |
+          python -c "
+          import requests, sys
+
+          base = 'http://127.0.0.1:8000'
+          failures = []
+
+          # Health
+          r = requests.get(f'{base}/health')
+          assert r.status_code == 200, f'Health failed: {r.status_code}'
+
+          # Webhook firma invalida -> 400
+          r = requests.post(f'{base}/api/webhooks/stripe',
+              data=b'fake', headers={'stripe-signature':'bad','Content-Type':'application/json'})
+          assert r.status_code == 400, f'Bad sig should be 400, got {r.status_code}'
+
+          # Pro feature senza sub -> 403
+          r = requests.get(f'{base}/api/pro-feature', headers={'x-user-id':'ghost'})
+          assert r.status_code == 403, f'Pro without sub should be 403, got {r.status_code}'
+
+          # Header mancante -> 422
+          r = requests.get(f'{base}/api/pro-feature')
+          assert r.status_code == 422, f'Missing header should be 422, got {r.status_code}'
+
+          # Price ID invalido -> 400
+          r = requests.post(f'{base}/api/payments/create-checkout-session',
+              json={'price_id':'price_FAKE','user_id':'u','user_email':'x@x.com'})
+          assert r.status_code == 400, f'Bad price_id should be 400, got {r.status_code}'
+
+          print('All security tests passed')
+          "
+
+  # ----------------------------------------------------------------
+  # Frontend — Next.js type check
+  # ----------------------------------------------------------------
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Create test .env.local
+        working-directory: frontend
+        run: |
+          cat > .env.local << 'EOF'
+          NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_placeholder
+          NEXT_PUBLIC_STRIPE_BASIC_PRICE_ID=price_test_basic
+          NEXT_PUBLIC_STRIPE_PRO_PRICE_ID=price_test_pro
+          EOF
+
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
