@@ -1,238 +1,152 @@
-# StripeSaaS
+# stripe-saas
 
-Full-stack SaaS con billing Stripe completo. Costruito con Next.js 14 + FastAPI + SQLite + Celery + Resend.
+[![Build](https://img.shields.io/github/actions/workflow/status/Gianpi96/stripe-saas/ci.yml?branch=main&label=build&style=flat-square)](https://github.com/Gianpi96/stripe-saas/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Deploy with Vercel](https://img.shields.io/badge/deploy-Vercel-black?style=flat-square&logo=vercel)](https://vercel.com/new/clone?repository-url=https://github.com/Gianpi96/stripe-saas)
 
-## Stack
+**A complete SaaS billing system — subscriptions, webhooks, customer portal, and async processing, all wired correctly.**
 
-| Layer | Tecnologia |
-|-------|-----------|
-| Frontend | Next.js 14 App Router + Tailwind CSS |
-| Backend | FastAPI + SQLAlchemy + SQLite |
-| Pagamenti | Stripe (Checkout, Subscriptions, Customer Portal, Webhooks) |
-| Code asincrono | Celery + Redis |
-| Email | Resend |
+---
 
-## Funzionalità
+## What you get
 
-- **Checkout** — Stripe Checkout Session con scadenza 30 min, metadata user_id
-- **Subscription** — Piano Basic ($9/mese) e Pro ($29/mese) con 14 giorni di trial gratuito
-- **Customer Portal** — Cambio piano, aggiornamento carta, cancellazione (zero codice custom)
-- **Webhook** — Gestione eventi Stripe con verifica firma e idempotency
-- **Email** — Welcome, conferma pagamento, avviso scadenza trial (Resend + retry esponenziale)
-- **Cron** — Sincronizzazione giornaliera degli stati subscription da Stripe
-- **Middleware** — Protezione endpoint Pro con controllo subscription status
+- **Stripe subscriptions pronte all'uso** — piani Basic ($9/mese) e Pro ($29/mese) con 14 giorni di trial gratuito. Checkout con scadenza di 30 minuti per evitare sessioni zombie.
+- **Webhook con idempotency** — ogni evento Stripe viene verificato con firma HMAC e salvato con ID univoco prima di qualsiasi elaborazione. Lo stesso evento può arrivare 10 volte: viene processato una volta sola.
+- **Celery per il processing asincrono** — i webhook non bloccano la risposta a Stripe. Gli eventi vengono messi in coda Redis e processati da worker separati. Zero timeout, zero retry forzati da Stripe.
+- **Customer portal integrato** — il cliente gestisce piano, carta, e cancellazione in autonomia tramite il portale ufficiale Stripe. Zero ticket di supporto per operazioni di billing.
+- **Email transazionali** — benvenuto, conferma pagamento, reminder scadenza trial, notifica pagamento fallito. Tutte via Resend con template HTML.
+- **Cron job giornaliero** — sincronizza lo stato degli abbonamenti da Stripe ogni notte e invia reminder ai trial in scadenza nelle prossime 24 ore.
+- **Protezione route basata su subscription** — il middleware FastAPI blocca l'accesso alle funzionalità Pro se l'abbonamento non è attivo. Nessun check manuale nei singoli endpoint.
+- **Zero dati carta nel backend** — Stripe gestisce tutto il sensitive data. Il backend non tocca mai numeri di carta o CVV.
 
-## Avvio rapido
+---
 
-### Prerequisiti
+## Screenshots
 
-- Python 3.10+
-- Node.js 18+
-- Docker (per Redis)
-- Stripe CLI
+> Aggiungi screenshot qui: `![Billing Dashboard](docs/screenshot-billing.png)`
 
-### 1. Clona e configura
+---
+
+## Quick start
 
 ```bash
-git clone <repo-url>
+# 1. Clona e configura
+git clone https://github.com/Gianpi96/stripe-saas
 cd stripe-saas
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+
+# 2. Avvia Redis e il database
+docker-compose up -d redis db
+
+# 3. Avvia backend, Celery worker, e frontend
+cd backend && pip install -r requirements.txt && uvicorn main:app --reload
+celery -A celery_app worker --loglevel=info   # in un secondo terminale
+cd ../frontend && npm install && npm run dev   # in un terzo terminale
 ```
 
-### 2. Backend
-
+In un quarto terminale, ascolta i webhook Stripe in locale:
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
-
-pip install -r requirements.txt
-
-copy .env.example .env        # Windows
-# cp .env.example .env        # macOS/Linux
-# Compila .env con le tue chiavi
-```
-
-### 3. Frontend
-
-```bash
-cd frontend
-npm install
-copy .env.local.example .env.local   # Windows
-# cp .env.local.example .env.local   # macOS/Linux
-# Compila .env.local con le tue chiavi
-```
-
-### 4. Redis
-
-```bash
-docker run -d --name stripe-saas-redis -p 6379:6379 redis:alpine
-```
-
-### 5. Avvia tutto (4 terminali)
-
-```bash
-# Terminale 1 — Backend
-cd backend && uvicorn main:app --reload --port 8000
-
-# Terminale 2 — Frontend
-cd frontend && npm run dev
-
-# Terminale 3 — Celery worker (Windows: --pool=solo)
-cd backend && .venv\Scripts\celery -A tasks.celery_app worker --loglevel=info --pool=solo
-
-# Terminale 4 — Stripe webhook listener
 stripe listen --forward-to localhost:8000/api/webhooks/stripe
-# Copia il whsec_... in backend/.env -> STRIPE_WEBHOOK_SECRET
 ```
 
-Apri **http://localhost:3000**
+---
 
-## Variabili d'ambiente
+## Environment variables
 
-### backend/.env
+### Backend (`backend/.env`)
 
-```env
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_BASIC_PRICE_ID=price_...
-STRIPE_PRO_PRICE_ID=price_...
+| Variable | Required | Example | Dove trovarla |
+|---|---|---|---|
+| `DATABASE_URL` | ✅ | `sqlite:///./app.db` | SQLite locale o PostgreSQL |
+| `REDIS_URL` | ✅ | `redis://localhost:6379` | Docker locale o Upstash |
+| `SECRET_KEY` | ✅ | `openssl rand -hex 32` | Generata localmente |
+| `STRIPE_SECRET_KEY` | ✅ | `sk_test_xxxxxxxxxxxx` | Stripe Dashboard → API keys |
+| `STRIPE_WEBHOOK_SECRET` | ✅ | `whsec_xxxxxxxxxxxx` | Stripe Dashboard → Webhooks |
+| `STRIPE_BASIC_PRICE_ID` | ✅ | `price_xxxxxxxxxxxx` | Stripe Dashboard → Products |
+| `STRIPE_PRO_PRICE_ID` | ✅ | `price_xxxxxxxxxxxx` | Stripe Dashboard → Products |
+| `RESEND_API_KEY` | ✅ | `re_xxxxxxxxxxxx` | resend.com/api-keys |
+| `FRONTEND_URL` | ✅ | `http://localhost:3000` | URL del frontend |
 
-APP_URL=http://localhost:3000
-BACKEND_URL=http://localhost:8000
-DATABASE_URL=sqlite:///./stripe_saas.db
-REDIS_URL=redis://localhost:6379/0
+### Frontend (`frontend/.env.local`)
 
-RESEND_API_KEY=re_...
-EMAIL_FROM=noreply@tuodominio.com
-EMAIL_FROM_NAME=StripeSaaS
+| Variable | Required | Example |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | ✅ | `http://localhost:8000` |
+| `NEXTAUTH_SECRET` | ✅ | `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | ✅ | `http://localhost:3000` |
 
-SLACK_WEBHOOK_URL=         # opzionale — alert pagamento fallito
-ALERT_EMAIL=admin@...      # opzionale
-```
-
-### frontend/.env.local
-
-```env
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
-NEXT_PUBLIC_STRIPE_BASIC_PRICE_ID=price_...
-NEXT_PUBLIC_STRIPE_PRO_PRICE_ID=price_...
-```
-
-## Creare i prodotti Stripe
-
-```bash
-# Basic $9/mese
-stripe products create --name "Basic"
-stripe prices create -d "product=<id>" -d "unit_amount=900" -d "currency=usd" -d "recurring[interval]=month"
-
-# Pro $29/mese
-stripe products create --name "Pro"
-stripe prices create -d "product=<id>" -d "unit_amount=2900" -d "currency=usd" -d "recurring[interval]=month"
-```
-
-## Carte di test Stripe
-
-| Scenario | Numero carta |
-|----------|-------------|
-| Pagamento OK | `4242 4242 4242 4242` |
-| Richiede 3D Secure | `4000 0025 0000 3155` |
-| Carta rifiutata | `4000 0000 0000 0002` |
-| Fondi insufficienti | `4000 0000 0000 9995` |
-
-Scadenza: qualsiasi data futura · CVV: qualsiasi 3 cifre
+---
 
 ## Architettura
 
 ```
-Browser (Next.js)
-    │
-    ├── GET  /pricing              → Pagina piani Basic / Pro
-    ├── GET  /success?session_id=  → Conferma pagamento
-    ├── GET  /cancel               → Pagamento annullato
-    ├── GET  /dashboard/billing    → Stato subscription + portal button
-    └── GET  /billing/return       → Return URL dal Customer Portal
-    
-    │ fetch
-    ▼
-FastAPI (localhost:8000)
-    │
-    ├── POST /api/payments/create-checkout-session
-    ├── POST /api/payments/portal-session
-    ├── GET  /api/payments/subscription-status
-    ├── GET  /api/pro-feature      ← protetto da require_pro_subscription
-    └── POST /api/webhooks/stripe
-            │
-            │ (risponde < 5s, processing asincrono)
-            ▼
-        Celery Worker (Redis broker)
-            │
-            ├── process_webhook_event
-            │     ├── checkout.session.completed → crea Subscription in DB
-            │     ├── customer.subscription.updated → aggiorna stato
-            │     ├── customer.subscription.deleted → stato = canceled
-            │     ├── invoice.payment_failed → stato = past_due + alert
-            │     └── invoice.payment_succeeded → email conferma
-            │
-            └── email_tasks (Resend, retry 2^n)
-                  ├── send_welcome_email
-                  ├── send_payment_confirmed_email
-                  ├── send_trial_expiring_email
-                  └── alert_payment_failed
-
-Celery Beat (cron)
-    ├── 03:00 UTC — sync_all_subscriptions (reconcilia DB con Stripe)
-    └── 09:00 UTC — send_trial_expiry_reminders (email 3gg prima fine trial)
+stripe-saas/
+├── backend/                    # FastAPI application
+│   ├── routers/
+│   │   ├── auth.py             # Registrazione e login
+│   │   ├── billing.py          # Checkout, portal, status
+│   │   └── webhooks.py         # Webhook handler Stripe
+│   ├── workers/
+│   │   └── celery_tasks.py     # Task asincroni (email, sync)
+│   ├── services/
+│   │   ├── stripe_service.py   # Wrapper Stripe API
+│   │   └── email_service.py    # Wrapper Resend
+│   ├── middleware/
+│   │   └── subscription.py     # Protezione route Pro
+│   └── cron/
+│       └── daily_sync.py       # Sincronizzazione giornaliera
+│
+├── frontend/                   # Next.js 14 App Router
+│   ├── app/
+│   │   ├── pricing/            # Pagina piani con checkout
+│   │   └── dashboard/          # Area riservata con status billing
+│   └── components/
+│       └── billing/            # PricingCard, SubscriptionStatus
+│
+├── docker-compose.yml          # Redis + PostgreSQL
+└── .github/workflows/          # CI/CD
 ```
 
-## Sicurezza
-
-- **Webhook**: verifica firma HMAC con `stripe.Webhook.construct_event`
-- **Idempotency**: tabella `webhook_events` con `event_id` unico — eventi duplicati ignorati
-- **Subscription gate**: middleware `require_pro_subscription` / `require_active_subscription`
-- **No card data**: nessun dato di carta transitato o loggato dal backend
-- **Checkout expiry**: sessione scade dopo 30 minuti (`expires_at`)
-
-## Database
+**Flusso webhook Stripe:**
 
 ```
-users                    subscriptions              webhook_events
-─────────────────        ──────────────────────     ──────────────────
-id (PK)                  id (PK)                    id (PK)
-email                    user_id (FK)               event_id (UNIQUE)
-stripe_customer_id       stripe_subscription_id     event_type
-created_at               stripe_customer_id         status
-                         plan                       payload (JSON)
-                         status                     processed_at
-                         trial_end
-                         current_period_end         subscription_status_logs
-                                                    ────────────────────────
-                                                    subscription_id (FK)
-                                                    old_status
-                                                    new_status
-                                                    reason
-                                                    changed_at
+Stripe → POST /api/webhooks/stripe
+  → Verifica firma HMAC (scarta richieste non firmate)
+  → Controlla event_id nel database → se già presente, rispondi 200 e stop
+  → Metti evento in coda Celery
+  → Rispondi 200 a Stripe immediatamente
+  → Worker Celery processa l'evento:
+      → Aggiorna stato subscription nel database
+      → Invia email appropriata
+      → Segna evento come processed
 ```
 
-## Test di sicurezza
+---
 
-```bash
-# Firma webhook invalida → 400
-curl -X POST http://localhost:8000/api/webhooks/stripe \
-  -H "stripe-signature: fake" -d "payload"
+## Piani e prezzi configurati
 
-# Endpoint Pro senza subscription → 403
-curl http://localhost:8000/api/pro-feature \
-  -H "x-user-id: utente-senza-sub"
+| Piano | Prezzo | Trial | Funzionalità |
+|---|---|---|---|
+| Basic | $9/mese | 14 giorni | Funzionalità base |
+| Pro | $29/mese | 14 giorni | Tutto + funzionalità Pro |
 
-# Price ID invalido → 400
-curl -X POST http://localhost:8000/api/payments/create-checkout-session \
-  -H "Content-Type: application/json" \
-  -d '{"price_id":"price_FAKE","user_id":"u1","user_email":"x@x.com"}'
-```
+I prezzi si configurano in Stripe Dashboard e si aggiungono alle env vars. Per cambiarli non tocchi il codice.
 
-## Licenza
+---
+
+## Why this stack
+
+**Celery + Redis per i webhook invece di processing sincrono** — Stripe richiede una risposta entro 30 secondi. Se il processing (database + email) supera quel limite, Stripe riprova il webhook e rischi di processarlo due volte. Celery riceve il webhook, lo mette in coda in millisecondi, e risponde subito. Il worker processa senza pressione di timeout.
+
+**SQLite in sviluppo, PostgreSQL in produzione** — SQLAlchemy astrae il database. In locale SQLite non richiede setup. In produzione si cambia solo la `DATABASE_URL`. Zero modifiche al codice.
+
+**Resend invece di SMTP** — configurare un server SMTP per le email transazionali richiede gestione di reputazione, SPF/DKIM, e rate limiting. Resend gestisce tutto questo. Il free tier copre 3.000 email/mese — sufficiente per la fase early-stage.
+
+**Idempotency via tabella database** — salvare l'`event_id` nel database prima del processing garantisce che anche in caso di crash e riavvio del worker, l'evento non venga riprocessato. Soluzioni in-memory (Redis key con TTL) perdono lo stato al riavvio.
+
+---
+
+## License
 
 MIT
