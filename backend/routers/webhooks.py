@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -84,9 +85,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event_id: str = event["id"]
     event_type: str = event["type"]
 
-    # Idempotency — skip already-processed events
+    # Idempotency — skip events that were already queued or processed.
+    # An event whose previous delivery failed to reach the queue is "failed":
+    # Stripe's retry must be processed, not skipped, or the event would be lost.
     existing = db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).first()
-    if existing:
+    if existing and existing.status != "failed":
         logger.info("webhook_already_processed", extra={"event_id": event_id})
         return {"status": "skipped"}
 
@@ -97,27 +100,41 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     obj_dict = _stripe_obj_to_dict(event["data"]["object"])
     data_json = json.dumps(obj_dict, default=str)
 
-    # Record the raw event before processing
-    record = WebhookEvent(
-        event_id=event_id,
-        event_type=event_type,
-        payload=data_json,
-        status="processing",
-    )
-    db.add(record)
-    db.commit()
+    # Record the raw event before processing (or reuse the failed record)
+    if existing:
+        record = existing
+        record.payload = data_json
+        record.status = "processing"
+    else:
+        record = WebhookEvent(
+            event_id=event_id,
+            event_type=event_type,
+            payload=data_json,
+            status="processing",
+        )
+        db.add(record)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two deliveries of the same event raced: the other one won (unique event_id).
+        db.rollback()
+        logger.info("webhook_already_processed", extra={"event_id": event_id})
+        return {"status": "skipped"}
 
     logger.info("webhook_received", extra={"event_id": event_id, "event_type": event_type})
 
     # Dispatch to Celery — respond in < 5 s regardless of processing time
-    from tasks.email_tasks import (
-        send_payment_confirmed_email,
-        send_trial_expiring_email,
-        alert_payment_failed,
-    )
     from tasks.sync_tasks import process_webhook_event
 
-    process_webhook_event.delay(event_id, event_type, data_json)
+    try:
+        process_webhook_event.delay(event_id, event_type, data_json)
+    except Exception:
+        # Queue unavailable (e.g. Redis down). Mark the event as failed and ask
+        # Stripe to retry later; the retry will be processed, not skipped.
+        logger.exception("webhook_enqueue_failed", extra={"event_id": event_id})
+        record.status = "failed"
+        db.commit()
+        raise HTTPException(status_code=503, detail="Queue unavailable, retry later")
 
     record.status = "queued"
     db.commit()
