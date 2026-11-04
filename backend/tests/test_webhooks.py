@@ -76,6 +76,50 @@ class TestWebhookIdempotency:
         db.commit()
 
 
+class TestWebhookQueueFailure:
+
+    def test_queue_down_returns_503_and_marks_failed(self, client, db, mock_celery_delays):
+        """Redis/Celery non disponibile → 503 (Stripe ritenta) e evento marcato 'failed'."""
+        from models import WebhookEvent
+
+        event_id = "evt_queue_down"
+        event = {"id": event_id, "type": "customer.subscription.updated",
+                 "data": {"object": {"id": "sub_q", "status": "active"}}}
+        mock_celery_delays["process_webhook_event"].side_effect = Exception("redis down")
+
+        resp = _post_webhook(client, event)
+
+        assert resp.status_code == 503
+        record = db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).first()
+        assert record is not None and record.status == "failed"
+
+        db.delete(record)
+        db.commit()
+
+    def test_retry_after_queue_failure_is_processed_not_skipped(self, client, db, mock_celery_delays):
+        """Dopo un 503 il ritentativo di Stripe viene accodato (non scartato come duplicato)."""
+        from models import WebhookEvent
+
+        event_id = "evt_queue_retry"
+        event = {"id": event_id, "type": "customer.subscription.updated",
+                 "data": {"object": {"id": "sub_r", "status": "active"}}}
+
+        mock_celery_delays["process_webhook_event"].side_effect = Exception("redis down")
+        assert _post_webhook(client, event).status_code == 503
+
+        mock_celery_delays["process_webhook_event"].side_effect = None
+        resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+        assert db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).count() == 1
+
+        db.expire_all()
+        record = db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).first()
+        db.delete(record)
+        db.commit()
+
+
 class TestWebhookEvents:
 
     def test_unknown_event_type_accepted_no_crash(self, client, db):
